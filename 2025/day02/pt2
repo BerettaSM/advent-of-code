@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+
+IFS=, read -ra ranges < /dev/stdin
+
+sum=0 c=0
+
+for range in "${ranges[@]}"; do
+    (( c++ ))
+    echo "Calculating: $c/${#ranges[@]}"
+
+    low="${range%-*}"
+    high="${range#*-}"
+
+    low_len=${#low}
+    high_len=${#high}
+
+    divisors=()
+
+    for len in $low_len $high_len; do
+        sqrt=$( bc <<< "precision=0;sqrt($len)" )
+        for (( i = 1; i <= sqrt; i++ )); do
+            if (( len % i == 0 )); then
+                divisors+=($i)
+                if (( i != len / i && len / i != len )); then
+                    divisors+=($((len / i)))
+                fi
+            fi
+        done
+    done
+
+    mapfile -t divisors < <(printf '%s\n' "${divisors[@]}" | sort -nu)
+
+    for (( i = low; i <= high; i++ )); do
+        if (( i < 11 )); then
+            continue
+        fi
+
+        len="${#i}" 
+        found=false
+
+        for divisor in "${divisors[@]}"; do
+            for (( j = 0; j < len - divisor; j += divisor )); do
+                left="${i:j:divisor}"
+                right="${i:j+divisor:divisor}"
+                if [[ "$left" != "$right" ]]; then
+                    continue 2
+                fi
+            done
+            found=true; break
+        done
+
+        if $found; then
+            ((sum += i))
+        fi
+
+        found=false
+    done
+done
+
+echo "Sum: $sum"
+

@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+
+IFS=, read -ra ranges < /dev/stdin
+
+c=0
+sum=0
+
+for range in "${ranges[@]}"; do
+    (( c++ ))
+    echo "Calculating: $c/${#ranges[@]}"
+
+    low="${range%-*}"
+    high="${range#*-}"
+
+    for (( i = low; i <= high; i++ )); do
+
+        len="${#i}" 
+
+        if (( len % 2 != 0 )); then
+            continue
+        fi
+
+        size=$(( len / 2 ))
+
+        left="${i:0:size}"
+        right="${i:size:size+1}"
+
+        if [[ $left == $right ]]; then
+            (( sum += i ))
+        fi
+    done
+done
+
+echo "Sum: $sum"
+
