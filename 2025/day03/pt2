@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+
+find-largest-joltage() {
+    local bank="$1"
+    local total_batteries="$2"
+    local len="${#bank}"
+
+    if (( total_batteries >= len )); then
+        # nothing to do
+        echo "$bank"
+        return
+    fi
+
+    local start_idx=0 end_idx largest_idx cur largest
+    local optimized_bank=""
+
+    for (( remaining = total_batteries; remaining > 0; remaining-- )); do
+        largest_idx=$start_idx
+        end_idx=$(( len - remaining ))
+
+        for (( i = start_idx; i <= end_idx; i++ )); do
+            cur=${bank:i:1} 
+            largest=${bank:largest_idx:1}
+
+            if (( cur > largest )); then
+                largest_idx=$i
+            fi
+        done
+
+        largest=${bank:largest_idx:1}
+        optimized_bank="$optimized_bank$largest"
+        start_idx=$(( largest_idx + 1 )) 
+        largest_idx=$start_idx
+    done
+
+    echo "$optimized_bank"
+}
+
+batteries=12
+sum=0
+
+while read -r bank; do
+    largest_jolt=$(find-largest-joltage "$bank" $batteries) 
+
+    (( sum += largest_jolt ))
+done
+
+echo $sum
+

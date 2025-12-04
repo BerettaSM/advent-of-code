@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+find-largest-joltage() {
+    local bank="$1"
+    local len="${#bank}"
+    local left=0 right=0 left_idx=0 right_idx=$len cur
+
+    # find the largest num at left
+    for (( i = 0; i < len - 1; i++ )); do
+        cur="${bank:i:1}" 
+        left="${bank:left_idx:1}"
+
+        if (( cur > left )); then
+            left_idx=$i
+        fi
+    done
+
+    # find the largest num at right, but
+    # do not cross the left.
+    for (( i = left_idx + 1; i < len; i++ )); do
+        cur="${bank:i:1}" 
+        right="${bank:right_idx:1}" 
+
+        if (( cur > right )); then
+            right_idx=$i
+        fi
+    done
+
+    echo "${bank:left_idx:1}${bank:right_idx:1}"
+}
+
+sum=0
+
+while read -r bank; do
+    largest_jolt=$(find-largest-joltage "$bank")
+
+    (( sum += largest_jolt ))
+done < /dev/stdin
+
+echo $sum
+
