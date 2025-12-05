@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+
+mapfile -t grid
+
+solution=()
+
+for (( i = 0; i < ${#grid}; i++ )); do
+
+    row=${grid[i]}    
+    parsed_row=''
+
+    for (( j = 0; j < ${#row}; j++ )); do
+
+        cell_val='.'
+
+        if [[ "${row:j:1}" != '.' ]]; then
+
+            adjacent_rolls=0
+
+            # Assess all adjacent cells
+            for (( k = -1; k <= 1; k++ )); do
+                for (( l = -1; l <= 1; l++ )); do
+
+                    # Skip current cell
+                    if (( k == 0 && l == 0 )); then
+                        continue
+                    fi
+
+                    adjacent_row=$(( i + k))
+                    adjacent_col=$(( j + l ))
+
+                    if (( adjacent_row < 0 || adjacent_row >= ${#grid[@]} || adjacent_col < 0 || adjancent_col >= ${#row} )); then
+                        continue
+                    fi
+
+                    if [[ "${grid[adjacent_row]:adjacent_col:1}" == '@' ]]; then
+                        (( adjacent_rolls++ ))
+                    fi
+
+                done
+            done
+
+            if (( adjacent_rolls < 4 )); then
+                cell_val='x'
+            else
+                cell_val='@'
+            fi
+
+        fi
+
+        parsed_row="$parsed_row$cell_val"
+
+    done
+
+    solution+=($parsed_row)
+
+done
+
+echo "${solution[*]}" | sed 's/[^x]//g' | wc -c | xargs -Ix echo 'x - 1' | bc
+
