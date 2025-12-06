@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+
+ranges=()
+
+while read line; do
+    if [[ -z "$line" ]]; then
+        break
+    fi
+    ranges+=("$line")
+done
+
+IFS=$'\n' sorted_ranges=($( sort -t '-' -nk1 <<< "${ranges[*]}" ))
+
+merged_ranges=()
+c=0
+
+current_start="${sorted_ranges[0]%-*}"
+current_end="${sorted_ranges[0]#*-}"
+
+for range in "${sorted_ranges[@]}"; do
+
+    (( c++ ))
+    echo "Calculating range ($c/${#sorted_ranges[@]}) ..."
+
+    IFS=- read -r start end <<< "$range"
+
+    if (( start <= current_end )); then
+        if (( end > current_end )); then
+            current_end=$end
+        fi
+    else
+        # no overlap
+        merged_ranges+=("$current_start-$current_end")
+        current_start=$start
+        current_end=$end
+    fi
+done
+
+# add last range
+merged_ranges+=("$current_start-$current_end")
+
+total_ids=0
+
+for entry in "${merged_ranges[@]}"; do
+    IFS=- read -r start end <<< "$entry"
+
+    ids=$(( end - start + 1 ))
+
+    (( total_ids += ids ))
+done
+
+echo "Total: $total_ids"
+
