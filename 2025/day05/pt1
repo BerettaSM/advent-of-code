@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+
+ranges=()
+ids=()
+
+while read line; do
+    if [[ -z "$line" ]]; then
+        break
+    fi
+    ranges+=("$line")
+done
+
+while read line; do
+    ids+=("$line")
+done
+
+fresh=0
+cur=0
+
+for id in "${ids[@]}"; do
+    (( cur++ ))
+    echo "Calculating ($cur/${#ids[@]})..."
+
+    for range in "${ranges[@]}"; do
+
+        IFS=- read -r start end <<< "$range"
+
+        if (( start <= id && id <= end )); then
+            (( fresh ++ ))
+            break
+        fi
+    done
+
+done
+
+echo "Total: $fresh"
