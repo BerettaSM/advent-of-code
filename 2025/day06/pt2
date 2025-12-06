@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+transpose() {
+    local text="$1"
+    awk '{
+        len = split($0, a, "")
+        for (i = 1; i <= len; i++) {
+            if (NR == 1) {
+                cols[i]=a[i]
+            }
+            else {
+                cols[i]=cols[i]""a[i]
+            }
+        }
+    }
+    END {
+        for (col in cols) {
+            print cols[col]
+        }
+    }' <<< "$text"
+}
+
+text=$(< /dev/stdin)
+total=0 acc=0 operator='' 
+while read -r line; do
+    if [[ -n "$line" ]]; then
+        if [[ "${line: -1:1}" =~ [*+] ]]; then
+            operator="${line: -1:1}"
+            [[ "$operator" == '+' ]] && acc=0 || acc=1
+            cur="${line:0:${#line}-1}"
+        else
+            cur="$line"
+        fi
+        [[ "$operator" == '+' ]] && (( acc += cur )) || (( acc *= cur ))
+    else
+        (( total += acc ))
+    fi
+done <<< $(transpose "$text")
+(( total += acc ))
+echo "Total: $total"
+

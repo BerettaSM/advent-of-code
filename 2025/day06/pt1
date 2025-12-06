@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+
+operations=()
+declare -A map
+
+i=0
+
+while read -r line; do
+    read -ra tokens <<< "$line"
+
+    for y in "${!tokens[@]}"; do
+        if [[ "$line" =~ [0-9] ]]; then
+            map[$i,$y]="${tokens[y]}"
+        else
+            operations+=("${tokens[y]}")
+        fi
+    done
+
+    (( i++ ))
+done
+
+(( i-- ))
+
+sum=0
+results=()
+
+for (( y = 0; y < "${#operations[@]}"; y++ )); do
+    [[ "${operations[y]}" == '+' ]] && acc=0 || acc=1
+
+    for (( x = 0; x < i; x++ )); do
+        [[ "${operations[y]}" == '+' ]] && (( acc += map[$x,$y] )) || (( acc *= map[$x,$y] ))
+    done
+
+    (( sum += acc ))
+done
+
+echo "Total: $sum"
+
