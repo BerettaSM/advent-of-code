@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+
+declare -A diagram
+
+height=0
+
+while read -r line; do
+
+    for (( width = 0; width < "${#line}"; width++ )); do
+        token=${line:width:1}
+
+        diagram[$height,$width]=$token
+    done
+
+    (( height++ ))
+
+done
+
+timelines=0
+
+backtrack() {
+    local x=$1 y=$2
+
+    if (( x >= height )); then
+        (( timelines ++ ))
+        return 0
+    fi
+
+    local cur_token
+    cur_token=${diagram[$x,$y]}    
+
+    if [[ $cur_token == '^' ]]; then
+
+        local left right
+        left=$(( y - 1 ))
+        right=$(( y + 1 ))
+
+        if (( left >= 0 )); then
+
+            diagram[$x,$left]='|'
+            backtrack $x $left
+            diagram[$x,$left]='.'
+
+        fi
+
+        if (( right < width )); then
+
+            diagram[$x,$right]='|'
+            backtrack $x $right
+            diagram[$x,$right]='.'
+
+        fi
+
+    elif [[ $cur_token =~ [S|] ]];then
+
+        backtrack $(( x + 1 )) $y
+
+    else
+
+        diagram[$x,$y]='|'
+        backtrack $(( x + 1 )) $y
+        diagram[$x,$y]='.'
+
+    fi
+}
+
+for (( y = 0; y < width; y++ )); do
+    [[ ${diagram[0,$y]} == 'S' ]] && break
+done
+
+backtrack 0 $y
+
+echo "Timelines: $timelines"
+

@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+prev_line=''
+len=-1
+s_position=-1
+row=()
+
+while read -r line; do
+    if (( len == -1 )); then
+        len=${#line}
+        row=( $(printf '1 %.0s' $(seq 1 $len)) )
+    fi
+    for (( i = 0; i < ${len}; i++ )); do
+        if [[ "${line:i:1}" == '^' ]]; then
+            row[i]=$(( row[i - 1] + row[i + 1] ))
+        fi
+    done
+    prev_line=$line
+done < <(tac)
+
+s_position=$(( $( awk '{ print index($0, "S") }' <<< "$prev_line"  ) - 1 ))
+echo "Timelines: ${row[$s_position]}"
+
