@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+declare -A diagram
+
+height=0
+
+while read -r line; do
+
+    for (( width = 0; width < "${#line}"; width++ )); do
+        token=${line:width:1}
+
+        diagram[$width,$height]=$token
+    done
+
+    (( height++ ))
+
+done
+
+splits=0
+
+# First line will be origin, ignore it
+for (( y = 1; y < height; y++ )); do
+
+    for (( x = 0; x < width; x++ )); do
+
+        above_token=${diagram[$x,$(( y - 1 ))]}    
+        cur_token=${diagram[$x,$y]}    
+
+        if [[ $above_token =~ [S|] ]]; then
+
+            if [[ $cur_token == '^' ]]; then
+                (( x - 1 >= 0 )) && diagram[$(( x - 1 )),$y]='|'
+                (( x + 1 < width )) && diagram[$(( x + 1 )),$y]='|'
+                
+                (( splits++ ))
+            else
+                diagram[$x,$y]='|'
+            fi
+
+        fi
+    done
+done
+
+echo "Total splits: $splits"
+
