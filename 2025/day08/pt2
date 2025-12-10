@@ -1,0 +1,163 @@
+#!/usr/bin/env bash
+
+. /home/ramon/utils/vardump
+
+FILE="$1"
+MAX_CONNECTIONS=1000
+
+if [[ ! -f "$FILE" ]]; then
+    echo 'File does not exist.' >&2
+    exit 1
+fi
+
+BASENAME="${FILE##*/}"
+BASENAME="${BASENAME%.*}"
+CACHE_FILE="$PWD/.$BASENAME.cache.txt"
+
+on_sigint() {
+    if [[ -f "$CACHE_FILE" ]]; then
+        echo "Clearing possibly incomplete cache file."
+        rm "$CACHE_FILE"
+    fi
+    exit 0
+}
+
+total_coords=0
+
+if [[ ! -f "$CACHE_FILE" ]]; then
+
+    echo 'Cache file does not exist. Calculating from input file.'
+    distances=()
+    coords=()
+
+    calculate_distance() {
+        local c1="$1"
+        local c2="$2"
+        local d
+        local x1 y1 z1
+        local x2 y2 z2
+        IFS=, read -r x1 y1 z1 <<< "$c1"
+        IFS=, read -r x2 y2 z2 <<< "$c2"
+        d=$(( (x1 - x2)**2 + (y1 - y2)**2 + (z1 - z2)**2 ))
+        distances+=("$c1-$d-$c2")
+    }
+
+    i=0
+    while read -r coord; do
+        for other_coord in "${coords[@]}"; do
+            (( i++ ))
+            [[ $(( i % 100 )) == 0 ]] && echo "Calculating distance: $i/? ..." >&2
+            calculate_distance "$coord" "$other_coord"
+        done
+        coords+=($coord)
+    done < "$FILE"
+
+    total_coords=${#coords[@]}
+
+    echo 'Sorting the distances...'
+    mapfile -t distances < <(printf '%s\n' "${distances[@]}" | sort -t '-' -nk 2)
+
+    echo "Caching the result at '$CACHE_FILE'."
+
+    trap on_sigint SIGINT
+    i=0
+    echo "$total_coords" >> "$CACHE_FILE"
+    for entry in "${distances[@]}"; do
+        echo "$entry" >> "$CACHE_FILE"
+        (( ++i >= MAX_CONNECTIONS )) && break
+    done
+    trap - SIGINT
+    echo "$i entries were cached."
+else
+    echo "Reading from cache file at '$CACHE_FILE'."
+    read -r total_coords < "$CACHE_FILE"
+    mapfile -t distances < <(sed -n '1!p' "$CACHE_FILE")
+    echo "Read ${#distances[@]} entries from cache."
+fi
+
+# Negative numbers are the roots, also keep track of union sizes.
+unions=()
+
+increment_union_size() {
+    local member_index="$1"
+    local n="$2"
+
+    while (( unions[member_index] >= 0 )); do
+        member_index=${unions[member_index]}
+    done
+
+    # The root is negative, so to actually increment the size, we decrement it.
+    (( unions[member_index] -= n ))
+}
+
+# find_root will assign the root index here.
+root=
+
+find_root() {
+    local member_index="$1"
+
+    while (( unions[member_index] >= 0 )); do
+        member_index=${unions[member_index]}
+    done
+
+    root=$member_index
+}
+
+# Positions of a coord inside the union array.
+declare -A positions
+
+i=0
+total_roots=0
+
+for entry in "${distances[@]}"; do
+
+    IFS=- read -r c1 distance c2 <<< "$entry"
+
+    pos1=${positions[$c1]}
+    pos2=${positions[$c2]}
+
+    if [[ -z $pos1 && -z $pos2 ]]; then
+        # Both coords have no connections.
+        positions[$c1]=${#unions[@]}  
+        unions+=(-2)  # set c1 as root
+        positions[$c2]=${#unions[@]}
+        unions+=(${positions[$c1]}) # c2 points to c1
+        (( total_roots++ ))
+    elif [[ -z $pos1 ]]; then
+        # C1 has no connections, but C2 does.
+        positions[$c1]=${#unions[@]}  
+        unions+=($pos2)
+        increment_union_size ${positions[$c1]} 1
+    elif [[ -z $pos2 ]]; then
+        # C2 has no connections, but C1 does.
+        positions[$c2]=${#unions[@]}  
+        unions+=($pos1)
+        increment_union_size ${positions[$c2]} 1
+    else
+        # Both C1 and C2 have connections. Find out if they're connected
+        # together.
+        find_root $pos1
+        c1_root=$root
+        find_root $pos2
+        c2_root=$root
+
+        if (( c1_root != c2_root )); then
+            # Separate groups. Need to merge both.
+            increment_union_size $c1_root $(( unions[c2_root] * -1 ))
+            unions[$c2_root]=$c1_root
+            (( total_roots-- ))
+        fi
+    fi
+
+    if (( ${#unions[@]} == total_coords && total_roots == 1 )); then
+        break
+    fi
+done
+
+IFS=, read -r x1 _ <<< "$c1"
+IFS=, read -r x2 _ <<< "$c2"
+
+result=$(( x1 * x2 ))
+
+echo "Result: $result"
+
