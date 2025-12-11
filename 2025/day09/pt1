@@ -1,64 +1,29 @@
 #!/usr/bin/env bash
 
-# Look into Chebyshev distance, maybe?
-
 mapfile -t coords
 
-declare -A floor
-declare -A closest
+max_area=0
 
-# Figure the top left and bottom right corners of the entire floor.
-for c in "${coords[@]}"; do
-    IFS=, read -r x y <<< "$c"
-    [[ -z ${floor[tlx]} || ${floor[tlx]} -gt $x ]] && floor[tlx]=$x
-    [[ -z ${floor[tly]} || ${floor[tly]} -gt $y ]] && floor[tly]=$y
-    [[ -z ${floor[brx]} || ${floor[brx]} -lt $x ]] && floor[brx]=$x
-    [[ -z ${floor[bry]} || ${floor[bry]} -lt $y ]] && floor[bry]=$y
+for (( i = 0; i < ${#coords[@]}; i++ )); do
+    for (( j = i + 1; j < ${#coords[@]}; j++ )); do
+        IFS=, read -r x1 y1 <<< ${coords[i]}
+        IFS=, read -r x2 y2 <<< ${coords[j]}
+
+        width=$(( x2 - x1 ))
+        (( width < 0 )) && (( width *= -1 ))
+        height=$(( y2 - y1 ))
+        (( height < 0 )) && (( height *= -1 ))
+        (( height++ ))
+        (( width++ ))
+
+        area=$(( height * width ))
+
+        (( area > max_area )) && max_area=$area
+
+        echo "Comparing ${coords[i]} and ${coords[j]}. Area: $area"
+    done 
 done
 
-# Figure out the coords that are closest to the corners.
-for c in "${coords[@]}"; do
-    IFS=, read -r x y <<< "$c"
-    
-    # top left
-    d=$(( (x - floor[tlx])**2 + (y - floor[tly])**2 ))
-    IFS=- read -r distance _ <<< "${closest[tl]}"
-    [[ -z ${closest[tl]} || $d -lt $distance ]] && closest[tl]="$d-$x-$y"
 
-    # bottom left
-    d=$(( (x - floor[tlx])**2 + (y - floor[bry])**2 ))
-    IFS=- read -r distance _ <<< "${closest[bl]}"
-    [[ -z ${closest[bl]} || $d -lt $distance ]] && closest[bl]="$d-$x-$y"
-
-    # top right
-    d=$(( (x - floor[brx])**2 + (y - floor[tly])**2 ))
-    IFS=- read -r distance _ <<< "${closest[tr]}"
-    [[ -z ${closest[tr]} || $d -lt $distance ]] && closest[tr]="$d-$x-$y"
-
-    # bottom right
-    d=$(( (x - floor[brx])**2 + (y - floor[bry])**2 ))
-    IFS=- read -r distance _ <<< "${closest[br]}"
-    [[ -z ${closest[br]} || $d -lt $distance ]] && closest[br]="$d-$x-$y"
-
-done
-
-IFS=- read -r _ tlx tly <<< "${closest[tl]}"
-IFS=- read -r _ brx bry <<< "${closest[br]}"
-IFS=- read -r _ trx try <<< "${closest[tr]}"
-IFS=- read -r _ blx bly <<< "${closest[bl]}"
-
-tl_br_distance=$(( (tlx - brx)**2 + (tly - bry)**2 ))
-tr_bl_distance=$(( (trx - blx)**2 + (try - bly)**2 ))
-
-if (( tl_br_distance > tr_bl_distance )); then
-    height=$(( bry - tly + 1 ))
-    width=$(( brx - tlx + 1 ))
-else
-    height=$(( bly - try + 1 ))
-    width=$(( trx - blx + 1 ))
-fi
-
-result=$(( height * width ))
-
-echo "Result: $result"
+echo "Result: $max_area"
 
