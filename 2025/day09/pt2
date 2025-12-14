@@ -1,0 +1,337 @@
+#!/usr/bin/env bash
+
+mapfile -t coords
+
+declare -A boundaries
+declare -A grid
+hlines=()   # index is the x coord
+vlines=()   # index is the y coord
+areas=()
+
+print-grid() {
+    local i j
+
+    for (( j = boundaries[minY] - 1; j <= boundaries[maxY] + 1; j++ )); do
+        for (( i = boundaries[minX] - 1; i <= boundaries[maxX] + 1; i++ )); do
+            case "${grid[$i,$j]}" in
+                1) echo -en '\033[0;31m#\033[0m ' ;;
+                2) echo -en '\033[0;32mX\033[0m ' ;;
+                *) echo -n '. ' ;;
+            esac
+        done
+        echo
+    done
+}
+
+calculate-area() {
+    local x1 y1 x2 y2
+    local dx dy area
+    x1="$1"
+    y1="$2"
+    x2="$3"
+    y2="$4"
+    dx=$(( x2 - x1 ))
+    dx="${dx#-}"
+    dy=$(( y2 - y1 ))
+    dy="${dy#-}"
+    (( dx++ ))
+    (( dy++ ))
+    area=$(( dx * dy ))
+    areas+=("$x1,$y1-$x2,$y2-$area")
+}
+
+calculate-areas() {
+    local i j
+    local x1 y1 x2 y2
+    for (( i = 0; i < ${#coords[@]} - 1; i++ )); do
+        IFS=, read -r x1 y1 <<< "${coords[i]}"
+        for (( j = i + 1; j < ${#coords[@]}; j++ )); do
+            IFS=, read -r x2 y2 <<< "${coords[j]}"
+            calculate-area "$x1" "$y1" "$x2" "$y2"
+        done
+    done
+    mapfile -t areas < <(printf '%s\n' "${areas[@]}" | sort -t '-' -nrk 3)
+}
+
+calculate-boundaries() {
+    local coord x y
+    for coord in "${coords[@]}"; do
+        IFS=, read -r x y <<< "$coord"
+        (( boundaries[minX] == 0 || x < boundaries[minX] )) && boundaries[minX]=$x
+        (( boundaries[minY] == 0 || y < boundaries[minY] )) && boundaries[minY]=$y
+        (( x > boundaries[maxX] )) && boundaries[maxX]=$x
+        (( y > boundaries[maxY] )) && boundaries[maxY]=$y
+    done
+}
+
+draw-line() {
+    local c1 c2 i j
+    local x1 y1 x2 y2 temp
+    c1="$1"
+    c2="$2"
+
+    IFS=, read -r x1 y1 <<< "$c1"
+    IFS=, read -r x2 y2 <<< "$c2"
+
+    # Assume that either x1 and x2 are equal, or y1 and y2 are equal.
+    if (( x1 > x2 || y1 > y2 )); then
+        temp=$x1
+        x1=$x2
+        x2=$temp
+        temp=$y1
+        y1=$y2
+        y2=$temp
+    fi
+
+    for (( i = x1 ; i <= x2; i++ )); do
+        for (( j = y1 ; j <= y2; j++ )); do
+            if (( i == x1 && j == y1 || i == x2 && j == y2 )); then
+                grid[$i,$j]=1
+             else
+                grid[$i,$j]=2
+            fi
+        done
+    done
+}
+
+draw-perimeter() {
+    local i j c1 c2
+    for (( i = 0; i < ${#coords[@]} - 1; i++ )); do
+        c1="${coords[i]}"
+        c2="${coords[i+1]}"
+        draw-line "$c1" "$c2"
+    done
+    draw-line "$c2" "${coords[0]}"
+}
+
+is-coord-within-polygon() {
+    local x y cell
+    local dxl dxr dyt dyb dhs dhe dvs dve
+    IFS=, read -r x y <<< "$1"
+
+    # If the coord is at the edge of the polygon, return true.
+    [[ ${grid[$x,$y]} == [12] ]] && return 0
+
+    # If outside the boundaries, return false
+    (( x < boundaries[minX] || x > boundaries[maxX] )) && return 1
+    (( y < boundaries[minY] || y > boundaries[maxY] )) && return 1
+
+    # Cast a ray to the closest boundary to check.    
+    dxl=$(( x - boundaries[minX] )) 
+    dxr=$(( boundaries[maxX] - x ))
+    dyt=$(( y - boundaries[minY] ))
+    dyb=$(( boundaries[maxY] - y ))
+
+    if (( dxl < dxr )); then
+        # left boundary closer than right
+        dh=$dxl
+        dhs=${boundaries[minX]}
+        dhe=$x
+    else
+        dh=$dxr
+        dhs=$x
+        dhe=${boundaries[maxX]}
+    fi
+
+    if (( dyt < dyb )); then
+        # top boundary closer than bottom
+        dv=$dyt
+        dvs=${boundaries[minY]}
+        dve=$y
+    else
+        dv=$dyb
+        dvs=$y
+        dve=${boundaries[maxY]}
+    fi
+
+    if (( dh < dv )); then
+        # Casting a ray on the horizontal axis
+        s=$dhs
+        e=$dhe
+    else
+        # Casting a ray on the vertical axis
+        s=$dvs
+        e=$dve
+    fi
+
+    intersecting=false
+    crosses=0
+
+    while (( s <= e )); do
+        
+        if (( dh < dv )); then
+            cell=${grid[$s,$y]}
+        else
+            cell=${grid[$x,$s]}
+        fi
+
+        if ! $intersecting && [[ $cell == [12] ]]; then
+            (( crosses++ ))
+            intersecting=true
+        elif $intersecting && [[ $cell != [12] ]]; then
+            intersecting=false
+        fi
+
+        (( s++ ))
+    done
+
+    # If crosses is an odd number, return true, false otherwise.
+    (( crosses % 2 == 1 ))
+}
+
+is-area-within-polygon() {
+    local c1 c2 c3 c4
+    local x1 y1 x2 y2
+    local corner
+    c1="$1"
+    c2="$2"
+
+    IFS=, read -r x1 y1 <<< "$c1"
+    IFS=, read -r x2 y2 <<< "$c2"
+
+    # Find the opposite corners from c1 and c2
+    c3="$x1,$y2"
+    c4="$x2,$y1"
+
+    # Check if the opposite corners are inside the polygon,
+    # for quick invalidation.
+    for corner in  "$c3" "$c4"; do
+        if ! is-coord-within-polygon "$corner"; then
+            return 1
+        fi
+    done
+
+    if does-line-cross-rectangle "$c1" "$c2"; then
+        return 1
+    fi
+
+    return 0
+}
+
+does-line-cross-rectangle() {
+    local c1="$1"
+    local c2="$2"
+
+    local x1 y1 x2 y2 x3 x4 y3 y4 coord
+    local copy temp
+
+    IFS=, read -r x1 y1 <<< "$c1"
+    IFS=, read -r x2 y2 <<< "$c2"
+
+    if (( x1 > x2 )); then
+        temp=$x1
+        x1=$x2
+        x2=$temp
+    fi
+
+    if (( y1 > y2 )); then
+        temp=$y1
+        y1=$y2
+        y2=$temp
+    fi
+
+    # check if any horizontal lines cross the rectangle
+    copy=()
+    for key in "${!hlines[@]}"; do
+        if (( key > y1 && key < y2 )); then
+            copy[key]="${hlines[$key]}"
+        fi
+    done
+
+    for key in "${!copy[@]}"; do
+        coord="${copy[$key]}"
+        IFS=, read -r x3 x4 <<< "$coord"
+
+        if (( (x3 <= x1 && x4 <= x1) || (x3 >= x2 && x4 >= x2) )); then
+            continue
+        fi
+
+        return 0
+    done
+
+    # check if any vertical lines cross the rectangle
+    copy=()
+    for key in "${!vlines[@]}"; do
+        if (( key > x1 && key < x2 )); then
+            copy[key]="${vlines[$key]}"
+        fi
+    done
+
+    for key in "${!copy[@]}"; do
+        coord="${copy[$key]}"
+        IFS=, read -r y3 y4 <<< "$coord"
+
+        if (( (y3 <= y1 && y4 <= y1) || (y3 >= y2 && y4 >= y2) )); then
+            continue
+        fi
+
+        return 0
+    done
+
+    return 1
+}
+
+index-lines() {
+    local coord i
+    local x1 y1 x2 y2 c1 c2 temp
+
+    for (( i = 0; i < ${#coords[@]} - 1; i++ )); do
+        c1="${coords[i]}"
+        c2="${coords[i+1]}"
+
+        IFS=, read -r x1 y1 <<< "$c1"
+        IFS=, read -r x2 y2 <<< "$c2"
+
+        if (( x1 == x2 )); then
+            # vertical line
+            if (( y1 > y2 )); then
+                temp=$y1
+                y1=$y2
+                y2=$temp
+            fi
+            vlines[x1]="${vlines[$x1]} $y1,$y2"
+        else
+            # horizontal line
+            if (( x1 > x2 )); then
+                temp=$x1
+                x1=$x2
+                x2=$temp
+            fi
+            hlines[y1]="${hlines[$y1]} $x1,$x2"
+        fi
+    done
+}
+
+check-areas() {
+    local c1 c2 i
+    local item area
+    i=0
+    for item in "${areas[@]}"; do
+        IFS=- read -r c1 c2 area <<< "$item"
+
+        (( i++ ))
+
+        printf '>>> Checking\t%s\t\t\t(%s)\n' "[$c1] to [$c2]" "$i/${#areas[@]}"
+
+        if is-area-within-polygon "$c1" "$c2"; then
+            echo "Result: ${area:-not found}"
+            break
+        fi
+    done
+}
+
+echo "Calculating areas."
+calculate-areas
+
+echo "Calculating boundaries."
+calculate-boundaries
+
+echo "Drawing the polygon's perimeter."
+draw-perimeter
+
+echo "Indexing lines."
+index-lines
+
+echo "Checking the calculated areas validity."
+check-areas
+

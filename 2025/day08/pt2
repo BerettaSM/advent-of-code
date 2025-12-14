@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 
-. /home/ramon/utils/vardump
-
 FILE="$1"
 MAX_CONNECTIONS=1000
 
