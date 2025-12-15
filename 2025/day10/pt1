@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+
+mapfile -t lines
+
+result=0
+j=0
+for line in "${lines[@]}"; do
+    (( j++ ))
+
+    mapfile -t -d " " entries <<< "$line"
+    len=${#entries[@]}
+
+    printf '>>> Calculating\t\t%s\t\t%s\n' "$j/${#lines[@]}" "($line)"
+
+    indicators=${entries[0]}
+    joltage=${entries[-1]%$'\n'}
+    button_sequences=${entries[@]:1:len-2}
+
+    # Convert the indicators to binary, then decimal.
+    indicator_digit=${indicators%]}
+    indicator_digit=${indicator_digit#[}
+    indicator_digit=${indicator_digit//./0}
+    indicator_digit=${indicator_digit//\#/1}
+    indicator_digit=$((2#$indicator_digit))
+
+    max=$( echo "$button_sequences" | tr -d '()' | tr ' ,' '\n\n' | sort -r | head -1 )
+    button_decimal_sequences=()
+
+    # Convert the button sequences to a sequence of decimals.
+    for sequence in $button_sequences; do
+        s=${sequence#(}
+        s=${s%)}
+
+        i=0
+        bin=''
+        IFS=,
+
+        for digit in ${s[*]}; do
+            while (( i < digit )); do
+                bin="${bin}0"
+                (( i++ ))
+            done
+            (( i == digit )) && bin="${bin}1"
+            (( i++ ))
+        done
+
+        while (( i <= max )); do
+            bin="${bin}0"
+            (( i++ ))
+        done
+
+        button_decimal_sequences+=($((2#$bin)))
+
+        unset IFS
+    done
+
+    initial="$indicator_digit-${button_decimal_sequences[@]}"
+    initial="${initial// /,}"
+    queue=("$initial")
+    tree_depth_level=1
+
+    while true; do
+
+        new_permutations=()
+
+        for permutation in "${queue[@]}"; do
+            IFS=- read -r partial sequences <<< "$permutation"
+            mapfile -t -d, sequences <<< "$sequences"
+
+            for (( i = 0; i < ${#sequences[@]}; i++ )); do
+                button_press="${sequences[i]%$'\n'}"
+                new_partial=$(( partial ^ button_press ))
+
+                if (( new_partial == 0 )); then
+                    (( result += tree_depth_level ))
+                    break 3
+                fi
+
+                sequence_slice_before="${sequences[@]:0:i}"
+                sequence_slice_after="${sequences[@]:i+1}"
+
+                new_sequence=("${sequence_slice_before}" "$sequence_slice_after")
+
+                new_permutation="${new_permutation// / }"
+                new_permutation="$new_partial-${new_sequence[@]// /,}"
+                new_permutation="${new_permutation//- /-}"
+                new_permutation="${new_permutation// /,}"
+                new_permutation="${new_permutation%,}"
+    
+                new_permutations+=("${new_permutation%$'\n'}")
+            done
+        done
+
+        queue=("${new_permutations[@]}") 
+
+        (( tree_depth_level++ ))
+
+        if (( tree_depth_level > ${#button_sequences} )); then
+            # sanity check
+            echo "If you're seeing this, there's no feasible answer."
+            exit 1
+        fi
+    done
+done
+
+echo "Result: $result"
