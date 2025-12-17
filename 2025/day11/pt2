@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+
+# TODO: Devise a way to start eliminating paths as soon as possible.
+
+declare -A mapping
+
+while IFS=: read -r key value; do
+    mapping[$key]="${value# }"
+done
+
+state=("svr")
+
+while true; do
+    changed=false
+
+    new_state=()
+
+    for (( i = 0; i < ${#state[@]}; i++ )); do
+        entry="${state[i]}"
+
+        # if entry includes both fft and dac (flag), increment the result by one then discard.
+        # else if ends in out, discard.
+
+        if [[ "$entry" =~ out$ ]]; then
+            new_state+=($entry)
+        else
+            dest="${entry##*,}"
+            new_dests="${mapping[$dest]}"
+
+            for new_dest in ${new_dests[@]}; do
+                new_state+=("$entry,$new_dest")
+            done
+
+            changed=true
+        fi
+    done
+
+    state=("${new_state[@]}")
+
+    if ! $changed; then
+        break
+    fi
+done
+
+for (( i = ${#state[@]} - 1; i >= 0; i-- )); do
+    if [[ ${state[i]} =~ dac ]] && [[ ${state[i]} =~ fft ]]; then
+        true
+    else
+        unset state[i]
+    fi
+done
+
+echo "Result: ${#state[@]}"
