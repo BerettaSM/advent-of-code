@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+
+declare -A mapping
+
+while IFS=: read -r key value; do
+    mapping[$key]="${value# }"
+done
+
+state=("you")
+
+while true; do
+    changed=false
+
+    new_state=()
+
+    for (( i = 0; i < ${#state[@]}; i++ )); do
+        entry="${state[i]}"
+        if [[ "${state[i]}" != 'out' ]]; then
+            new_state+=(${mapping[$entry]})
+            changed=true
+        else
+            new_state+=($entry)
+        fi
+    done
+
+    state=("${new_state[@]}")
+
+    if ! $changed; then
+        break
+    fi
+done
+
+echo "Result: ${#state[@]}"
