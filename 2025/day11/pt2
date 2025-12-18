@@ -1,53 +1,86 @@
 #!/usr/bin/env bash
 
-# TODO: Devise a way to start eliminating paths as soon as possible.
-
 declare -A mapping
+declare -A reverse_mapping
+declare -A cache
 
 while IFS=: read -r key value; do
-    mapping[$key]="${value# }"
-done
-
-state=("svr")
-
-while true; do
-    changed=false
-
-    new_state=()
-
-    for (( i = 0; i < ${#state[@]}; i++ )); do
-        entry="${state[i]}"
-
-        # if entry includes both fft and dac (flag), increment the result by one then discard.
-        # else if ends in out, discard.
-
-        if [[ "$entry" =~ out$ ]]; then
-            new_state+=($entry)
+    mapping[$key]=${value# }
+    for node in $value; do
+        if [[ -n ${reverse_mapping[$node]} ]]; then
+            reverse_mapping[$node]="${reverse_mapping[$node]} $key"
         else
-            dest="${entry##*,}"
-            new_dests="${mapping[$dest]}"
-
-            for new_dest in ${new_dests[@]}; do
-                new_state+=("$entry,$new_dest")
-            done
-
-            changed=true
+            reverse_mapping[$node]="$key"
         fi
     done
-
-    state=("${new_state[@]}")
-
-    if ! $changed; then
-        break
-    fi
 done
 
-for (( i = ${#state[@]} - 1; i >= 0; i-- )); do
-    if [[ ${state[i]} =~ dac ]] && [[ ${state[i]} =~ fft ]]; then
-        true
-    else
-        unset state[i]
+find-reverse-path() {
+    local cur=$1
+    local target=$2
+    if [[ $cur == $target ]]; then
+        REPLY=1
+        return
     fi
-done
+    local total=0 num
+    for neighbor in ${reverse_mapping[$cur]}; do
+        num=${| find-reverse-path $neighbor $target; }
+        (( total += num ))
+    done
+    REPLY=$total
+}
 
-echo "Result: ${#state[@]}"
+find-path() {
+    local cur=$1
+    local target=$2
+    if [[ $cur == $target ]]; then
+        (( result++ ))
+        REPLY=1
+        return
+    fi
+    local total=0 num
+    for neighbor in ${mapping[$cur]}; do
+        num=${| find-path $neighbor $target; }
+        (( total += num ))
+    done
+    REPLY=$total
+}
+
+find-path-memoized() {
+    local cur=$1
+    local target=$2
+    if [[ $cur == 'out' ]]; then
+        REPLY=0
+        return
+    fi
+    if [[ $cur == $target ]]; then
+        REPLY=1
+        return
+    fi
+    cached=${cache[$cur]}
+    if [[ -n $cached ]]; then
+        REPLY=$cached
+        return
+    fi
+    local total=0 num
+    for neighbor in ${mapping[$cur]}; do
+        num=${| find-path-memoized $neighbor $target; }
+        (( total += num ))
+    done
+    cache[$cur]=$total
+    REPLY=$total
+}
+
+fft_to_svr=${| find-reverse-path "fft" "svr"; }
+echo "FFT to SVR: $fft_to_svr"
+
+dac_to_out=${| find-path "dac" "out"; }
+echo "DAC to OUT: $dac_to_out"
+
+dac_to_fft=${| find-path-memoized "fft" "dac"; }
+echo "DAC to FFT: $dac_to_fft"
+
+result=$(( fft_to_svr * dac_to_fft * dac_to_out ))
+
+echo "Result: $result"
+
