@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+
+grids=()
+shapes=()
+max_squares=-1
+max_hypothetical_area=-1
+
+while IFS=: read -r prefix line; do
+    if [[ "$prefix" == *'x'* ]]; then
+        grids+=("$prefix:${line# }")
+    else
+        shape=''
+        while read -r shapeline; do
+            [[ -z "$shapeline" ]] && break
+            shape+="$shapeline "
+        done
+        _shape="${shape//[^#]}"
+        total_squares=${#_shape}
+        _shape="${shape// }"
+        hypothetical_area="${#_shape}"
+        (( total_squares > max_squares )) && max_squares=$total_squares
+        (( hypothetical_area > max_hypothetical_area )) && max_hypothetical_area=$hypothetical_area
+        shapes+=("${shape% }:$total_squares")
+    fi
+done
+
+solveable=0
+unsolveable=0
+maybe=0
+
+for grid in "${grids[@]}"; do
+    IFS=: read -r dimension gifts <<< "$grid"
+    IFS=x read -r height width <<< "$dimension"
+    read -ra gifts <<< "$gifts"
+
+    actual_space=$(( height * width ))
+
+    total_quantity=0
+    required_space=0
+    for idx in ${!gifts[@]}; do
+        size=${shapes[idx]#*:}
+        quantity=${gifts[idx]}
+        space_amount=$(( size * quantity )) 
+
+        (( required_space += space_amount ))
+        (( total_quantity += quantity ))
+    done
+
+    if (( required_space > actual_space )); then
+        (( unsolveable++ ))
+    elif (( total_quantity * max_hypothetical_area <= actual_space )); then
+        (( solveable++ ))
+    else
+        (( maybe++ ))
+    fi
+done
+
+# Goddamn it, Eric...
+echo "Solveable: $solveable"
+echo "Unsolveable: $unsolveable"
+echo "Maybe: $maybe"
+
