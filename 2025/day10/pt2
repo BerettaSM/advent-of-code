@@ -1,0 +1,218 @@
+#!/usr/bin/env bash
+
+declare -A cache
+declare -A paths
+declare -a combinations
+
+CACHE_FILES_DIR="$(readlink -f $BASH_SOURCE)"
+CACHE_FILES_DIR="${CACHE_FILES_DIR%/*}/cache"
+
+set-cache() {
+    local key="$1"
+    local value="$2"
+    cache[$key]=$value
+}
+
+combine() {
+    local buttons=("$@")
+    local combinations=()
+    local val i IFS=-
+    for (( val = 1; val < 2 ** ${#buttons[@]}; val++ )); do
+        local cur=()
+        for (( i = 0; i < ${#buttons[@]}; i++ )); do
+            if (( 1 << i & val )); then
+                cur+=("${buttons[i]}")
+            fi
+        done
+        combinations+=("${cur[*]}|${#cur[*]}")
+    done
+    readarray combinations < <(echo "${combinations[@]}" | tr ' ' '\n' | sort -t '|' -nk 2 | sed -E 's/\|[^ ]+//g')
+    IFS=$'\n'
+    REPLY="${combinations[*]}"
+}
+
+to-light-form() {
+    local joltages=("$@")
+    local lights=''
+    local joltage
+    for joltage in "${joltages[@]}"; do
+        case "$(( joltage % 2 ))" in
+            0) lights+='.' ;;
+            1) lights+='#' ;;
+        esac
+    done
+    REPLY="$lights"
+}
+
+solve() {
+    local IFS=,
+    local joltages="$1"
+    shift
+    local -a buttons=("$@")
+    if [[ -n ${cache[$joltages]} ]]; then
+        REPLY=${cache[$joltages]}
+        return $(( cache[$joltages] == -1 ? 1 : 0 ))
+    fi
+    local joltages_arr
+    readarray -t  joltages_arr <<< "${joltages//,/$'\n'}"
+    local joltage joltage_total=0
+    for joltage in "${joltages_arr[@]}"; do
+        if (( joltage < 0 )); then
+            # unfeasible
+            set-cache "$joltages" -1 
+            REPLY=-1
+            return 1
+        fi
+        (( joltage_total += joltage ))
+    done
+    if (( joltage_total == 0 )); then
+        # solved
+        set-cache "$joltages" 0
+        REPLY=0
+        return 0
+    fi
+    local best=-1
+    local _buttons _button _lever _cur_joltage _cur_joltages _paths _cur_joltages partial IFS
+    local lights=${| to-light-form "${joltages_arr[@]}"; }
+    local dots="${lights//\#}"
+    if [[ "$lights" == "$dots" ]]; then
+        # All lights turned off
+        _cur_joltages=("${joltages_arr[@]}")
+        local i
+        for (( i = 0; i < ${#_cur_joltages[@]}; i++ )); do
+            (( _cur_joltages[i] /= 2 ))
+        done
+        IFS=,
+        partial=${| solve "${_cur_joltages[*]}" "${buttons[@]}"; }
+        if (( $? == 0 )); then
+            set-cache "$joltages" "$(( partial * 2 ))"
+            set-cache "${_cur_joltages[*]}" "$partial"
+            REPLY="$(( partial * 2 ))"
+            return 0
+        else
+            for combination in "${combinations[@]}"; do
+                _cur_joltages=("${joltages_arr[@]}")
+                readarray -t _buttons <<< "${combination//-/$'\n'}"
+                for _button in "${_buttons[@]}"; do
+                    readarray -t _button <<< "${_button//,/$'\n'}"
+                    for _lever in "${_button[@]}"; do
+                        (( _cur_joltages[_lever]-- ))
+                    done
+                done
+                partial=${| solve "${_cur_joltages[*]}" "${buttons[@]}"; }
+                if (( $? == 0 )); then
+                    set-cache "${_cur_joltages[*]}" $partial
+                    if (( best == -1 || partial < best )); then
+                        best=$partial
+                    fi
+                else
+                    set-cache "${_cur_joltages[*]}" -1
+                fi
+            done
+        fi
+    else
+        # Some or all lights turned on
+        if [[ -z "${paths[$lights]}" ]]; then
+            # Find out all paths to turn the lights off (all should become even)
+            local combination odd _buttons _button _lever _cur_joltage
+            _paths=()
+            for combination in "${combinations[@]}"; do
+                _cur_joltages=("${joltages_arr[@]}")
+                readarray -t _buttons <<< "${combination//-/$'\n'}"
+                for _button in "${_buttons[@]}"; do
+                    readarray -t _button <<< "${_button//,/$'\n'}"
+                    for _lever in "${_button[@]}"; do
+                        (( _cur_joltages[_lever]-- ))
+                    done
+                done
+                odd=0
+                for _cur_joltage in "${_cur_joltages[@]}"; do
+                    (( odd |= _cur_joltage & 1 ))
+                done
+                if ! (( odd & 1 )); then
+                    _paths+=("$combination")
+                fi
+            done
+            paths[$lights]="${_paths[@]}"
+        fi
+        readarray -t _paths <<< "${paths[$lights]// /$'\n'}"
+        if [[ -n "${_paths[@]}" ]]; then
+            local _path
+            IFS=,
+            for _path in "${_paths[@]}"; do
+                _cur_joltages=("${joltages_arr[@]}")
+                readarray -t _buttons <<< "${_path//-/$'\n'}"
+                for _button in "${_buttons[@]}"; do
+                    readarray -t _button <<< "${_button//,/$'\n'}"
+                    for _lever in "${_button[@]}"; do
+                        (( _cur_joltages[_lever]-- ))
+                    done
+                done
+                partial=${| solve "${_cur_joltages[*]}" "${buttons[@]}"; }
+                if (( $? == 0 )); then
+                    set-cache "${_cur_joltages[*]}" $partial    
+                    (( partial += ${#_buttons[@]} )) 
+                    if (( best == -1 || partial < best )); then
+                        best=$partial
+                    fi
+                else
+                    set-cache "${_cur_joltages[*]}" -1
+                fi
+            done
+        fi
+    fi
+    IFS=
+    REPLY=$best
+    return $(( best == -1 ? 1 : 0 ))
+}
+
+job() {
+    local jib joltages buttons partial
+    jib=$1
+    joltages="$2"
+    buttons="$3"
+    readarray -t buttons <<< "${3// /$'\n'}"
+
+    paths=()
+    cache=()
+    combinations=(${| combine "${buttons[@]}"; })
+
+    partial=${| solve "$joltages" "${buttons[@]}"; }
+
+    echo "$partial" > "$CACHE_FILES_DIR/$jib.txt"
+}
+
+cores="$(nproc)"
+forks=$(( cores / 1 ))
+i=0
+j=0
+result=0
+
+if ! [[ -d "$CACHE_FILES_DIR" ]]; then
+    mkdir -p "$CACHE_FILES_DIR"
+fi
+
+while read -ra entry; do
+    (( i++ ))
+    echo "Calculating: $i/?"
+
+    if [[ -s "$CACHE_FILES_DIR/$i.txt" ]]; then
+        continue
+    fi
+
+    (( j++ ))
+
+    entry=("${entry[@]//[\(\)\{\}]/}")
+
+    buttons=("${entry[@]:1}")
+    unset buttons[-1]
+    joltages="${entry[-1]}"
+    
+    job "$i" "$joltages" "${buttons[*]}" &
+
+    if (( j >= forks )); then
+        wait -n
+    fi
+done
+
+echo "Done"
